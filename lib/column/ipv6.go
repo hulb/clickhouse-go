@@ -20,6 +20,7 @@ package column
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/binary"
@@ -56,6 +57,27 @@ func (col *IPv6) ScanRow(dest interface{}, row int) error {
 	case **net.IP:
 		*d = new(net.IP)
 		**d = col.row(row)
+	case *netip.Addr:
+		v, ok := netip.AddrFromSlice(col.data)
+		if !ok {
+			return &ColumnConverterError{
+				Op:   "ScanRow",
+				To:   fmt.Sprintf("%T", dest),
+				From: "IPv6",
+			}
+		}
+		*d = v
+	case **netip.Addr:
+		*d = new(netip.Addr)
+		v, ok := netip.AddrFromSlice(col.data)
+		if !ok {
+			return &ColumnConverterError{
+				Op:   "ScanRow",
+				To:   fmt.Sprintf("%T", dest),
+				From: "IPv6",
+			}
+		}
+		**d = v
 	default:
 		return &ColumnConverterError{
 			Op:   "ScanRow",
@@ -103,6 +125,21 @@ func (col *IPv6) Append(v interface{}) (nulls []uint8, err error) {
 
 func (col *IPv6) AppendRow(v interface{}) error {
 	var ip net.IP
+
+	parseToIp := func(addr netip.Addr) net.IP {
+		var res net.IP
+		d := addr.AsSlice()
+		switch len(d) {
+		case net.IPv4len:
+			tmp := addr.As16()
+			res = tmp[:]
+		default:
+			res = d
+		}
+
+		return res
+	}
+
 	switch v := v.(type) {
 	case net.IP:
 		ip = v
@@ -110,6 +147,15 @@ func (col *IPv6) AppendRow(v interface{}) error {
 		switch {
 		case v != nil:
 			ip = *v
+		default:
+			ip = make(net.IP, net.IPv6len)
+		}
+	case netip.Addr:
+		ip = parseToIp(v)
+	case *netip.Addr:
+		switch {
+		case v != nil:
+			ip = parseToIp(*v)
 		default:
 			ip = make(net.IP, net.IPv6len)
 		}

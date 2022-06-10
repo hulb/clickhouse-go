@@ -19,9 +19,11 @@ package tests
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"net"
+	"net/netip"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +42,7 @@ func TestIPv6(t *testing.T) {
 			Compression: &clickhouse.Compression{
 				Method: clickhouse.CompressionLZ4,
 			},
-			//Debug: true,
+			Debug: true,
 		})
 	)
 	if assert.NoError(t, err) {
@@ -51,6 +53,9 @@ func TestIPv6(t *testing.T) {
 				, Col3 Nullable(IPv6)
 				, Col4 Array(IPv6)
 				, Col5 Array(Nullable(IPv6))
+				, Col6 IPv6
+				, Col7 IPv6
+				, Col8 Nullable(IPv6)
 			) Engine Memory
 		`
 		defer func() {
@@ -64,8 +69,12 @@ func TestIPv6(t *testing.T) {
 					col3Data = col1Data
 					col4Data = []net.IP{col1Data, col2Data}
 					col5Data = []*net.IP{&col1Data, nil, &col2Data}
+
+					col6Data = netip.MustParseAddr("2001:44c8:129:2632:33:0:252:2")
+					col7Data = netip.MustParseAddr("2a02:e980:1e::1")
+					col8Data = col6Data
 				)
-				if err := batch.Append(col1Data, col2Data, col3Data, col4Data, col5Data); assert.NoError(t, err) {
+				if err := batch.Append(col1Data, col2Data, col3Data, col4Data, col5Data, col6Data, col7Data, col8Data); assert.NoError(t, err) {
 					if assert.NoError(t, batch.Send()) {
 						var (
 							col1 net.IP
@@ -73,11 +82,20 @@ func TestIPv6(t *testing.T) {
 							col3 *net.IP
 							col4 []net.IP
 							col5 []*net.IP
+
+							col6 netip.Addr
+							col7 netip.Addr
+							col8 *netip.Addr
 						)
-						if err := conn.QueryRow(ctx, "SELECT * FROM test_ipv6").Scan(&col1, &col2, &col3, &col4, &col5); assert.NoError(t, err) {
+						if err := conn.QueryRow(ctx, "SELECT * FROM test_ipv6").Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); assert.NoError(t, err) {
 							assert.Equal(t, col1Data, col1)
 							assert.Equal(t, col2Data, col2)
 							assert.Equal(t, col3Data, *col3)
+
+							assert.Equal(t, col6Data, col6)
+							assert.Equal(t, col7Data, col7)
+							assert.Equal(t, col8Data, *col8)
+
 							if assert.Len(t, col4, 2) {
 								assert.Equal(t, col1Data, col4[0])
 								assert.Equal(t, col2Data, col4[1])
